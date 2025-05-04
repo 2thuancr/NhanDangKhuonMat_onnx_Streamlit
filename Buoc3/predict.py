@@ -1,5 +1,4 @@
 import argparse
-
 import numpy as np
 import cv2 as cv
 import joblib
@@ -26,22 +25,17 @@ parser.add_argument('--save', '-s', type=str2bool, default=False, help='Set true
 args = parser.parse_args()
 
 svc = joblib.load('../model/svc.pkl')
-mydict = ['Thuan', 'Tien']
+mydict = ['Thuan', 'Tien']  # Ensure this matches the number of identities your model can predict
 
 def visualize(input, faces, fps, thickness=2):
     if faces[1] is not None:
         for idx, face in enumerate(faces[1]):
-            print('Face {}, top-left coordinates: ({:.0f}, {:.0f}), box width: {:.0f}, box height {:.0f}, score: {:.2f}'.format(idx, face[0], face[1], face[2], face[3], face[-1]))
-
+            print(f'Face {idx}, top-left coordinates: ({face[0]:.0f}, {face[1]:.0f}), box width: {face[2]:.0f}, box height: {face[3]:.0f}, score: {face[-1]:.2f}')
             coords = face[:-1].astype(np.int32)
             cv.rectangle(input, (coords[0], coords[1]), (coords[0]+coords[2], coords[1]+coords[3]), (0, 255, 0), thickness)
-            cv.circle(input, (coords[4], coords[5]), 2, (255, 0, 0), thickness)
-            cv.circle(input, (coords[6], coords[7]), 2, (0, 0, 255), thickness)
-            cv.circle(input, (coords[8], coords[9]), 2, (0, 255, 0), thickness)
-            cv.circle(input, (coords[10], coords[11]), 2, (255, 0, 255), thickness)
-            cv.circle(input, (coords[12], coords[13]), 2, (0, 255, 255), thickness)
-    cv.putText(input, 'FPS: {:.2f}'.format(fps), (1, 16), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
+            for i in range(4, len(coords), 2):
+                cv.circle(input, (coords[i], coords[i+1]), 2, (255, 0, 0), thickness)
+    cv.putText(input, f'FPS: {fps:.2f}', (1, 16), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
 if __name__ == '__main__':
     detector = cv.FaceDetectorYN.create(
@@ -52,8 +46,7 @@ if __name__ == '__main__':
         args.nms_threshold,
         args.top_k
     )
-    recognizer = cv.FaceRecognizerSF.create(
-    args.face_recognition_model,"")
+    recognizer = cv.FaceRecognizerSF.create(args.face_recognition_model, "")
 
     tm = cv.TickMeter()
 
@@ -62,7 +55,6 @@ if __name__ == '__main__':
     frameHeight = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
     detector.setInputSize([frameWidth, frameHeight])
 
-    dem = 0
     while True:
         hasFrame, frame = cap.read()
         if not hasFrame:
@@ -71,22 +63,30 @@ if __name__ == '__main__':
 
         # Inference
         tm.start()
-        faces = detector.detect(frame) # faces is a tuple
+        faces = detector.detect(frame)  # faces is a tuple
         tm.stop()
-        
+
         key = cv.waitKey(1)
         if key == 27:
             break
+
         if faces[1] is not None:
             face_align = recognizer.alignCrop(frame, faces[1][0])
             face_feature = recognizer.feature(face_align)
             test_predict = svc.predict(face_feature)
-            result = mydict[test_predict[0]]
-            cv.putText(frame,result,(1,50),cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+            # Check if the prediction index is within the range of mydict
+            if 0 <= test_predict[0] < len(mydict):
+                result = mydict[test_predict[0]]
+            else:
+                result = "Unknown"  # Default result if the index is out of range
+
+            cv.putText(frame, result, (1, 50), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
         # Draw results on the input image
         visualize(frame, faces, tm.getFPS())
 
         # Visualize results
         cv.imshow('Live', frame)
+
     cv.destroyAllWindows()
